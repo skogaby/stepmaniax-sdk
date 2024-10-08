@@ -16,6 +16,7 @@ enum SensorTestMode;
 enum PanelTestMode;
 enum SMXUpdateCallbackReason;
 struct SMXSensorTestModeData;
+enum SMXDedicatedCabinetLights;
 
 // All functions are nonblocking.  Getters will return the most recent state.  Setters will
 // return immediately and do their work in the background.  No functions return errors, and
@@ -121,6 +122,17 @@ SMX_API bool SMX_GetTestData(int pad, SMXSensorTestModeData *data);
 // This applies to all connected pads.
 SMX_API void SMX_SetPanelTestMode(PanelTestMode mode);
 
+// Sets the given lights set with the given data for a Dedicated cabinet. This API currently only
+// supports Dedicated cabinets, and there is not currently support for Standalone or DX cabinets.
+// Each lights device has its own number of supported lights, and lightDataSize must match the expected
+// number of lights for the given device.
+// * MARQUEE = 24
+// * LEFT_STRIP = 28
+// * LEFT_SPOTLIGHTS = 8
+// * RIGHT_STRIP = 28
+// * RIGHT_SPOTLIGHTS = 8
+SMX_API void SMX_SetDedicatedCabinetLights(SMXDedicatedCabinetLights lightDevice, const char* lightData, int lightDataSize);
+
 // Return the build version of the DLL, which is based on the git tag at build time.  This
 // is only intended for diagnostic logging, and it's also the version we show in SMXConfig.
 SMX_API const char *SMX_Version();
@@ -139,6 +151,15 @@ struct SMXInfo
 
     // This device's firmware version.
     uint16_t m_iFirmwareVersion;
+};
+
+// Enumeration of each of the controllable cabinet lights on a Dedicated Cabinet.
+enum SMXDedicatedCabinetLights {
+    MARQUEE = 0,
+    LEFT_STRIP = 1,
+    LEFT_SPOTLIGHTS = 2,
+    RIGHT_STRIP = 3,
+    RIGHT_SPOTLIGHTS = 4
 };
 
 enum SMXUpdateCallbackReason {

@@ -49,6 +49,7 @@ public:
     void SetPanelTestMode(PanelTestMode mode);
     void SetSerialNumbers();
     void SetOnlySendLightsOnChange(bool value) { m_bOnlySendLightsOnChange = value; }
+    void SetDedicatedCabinetLights(SMXDedicatedCabinetLights lightDevice, const char* lightData, int numLights);
     
     // Run a function in the user callback thread.
     void RunInHelperThread(function<void()> func);

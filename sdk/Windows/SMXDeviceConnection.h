@@ -24,6 +24,9 @@ struct SMXDeviceInfo
 
     // This device's firmware version (normally 1).
     uint16_t m_iFirmwareVersion;
+
+    // The actual value of the player byte.
+    char m_Player;
 };
 
 // Low-level SMX device handling.
@@ -34,7 +37,7 @@ public:
     SMXDeviceConnection(shared_ptr<SMXDeviceConnection> &pSelf);
     ~SMXDeviceConnection();
 
-    bool Open(shared_ptr<AutoCloseHandle> DeviceHandle, wstring &error);
+    bool Open(shared_ptr<AutoCloseHandle> DeviceHandle, wstring &error, bool bIsCabinetDevice);
 
     void Close();
     

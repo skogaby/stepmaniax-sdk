@@ -34,7 +34,7 @@ SMX::SMXDeviceConnection::~SMXDeviceConnection()
     Close();
 }
 
-bool SMX::SMXDeviceConnection::Open(shared_ptr<AutoCloseHandle> DeviceHandle, wstring &sError)
+bool SMX::SMXDeviceConnection::Open(shared_ptr<AutoCloseHandle> DeviceHandle, wstring &sError, bool bIsCabinetDevice)
 {
     m_hDevice = DeviceHandle;
 
@@ -45,10 +45,14 @@ bool SMX::SMXDeviceConnection::Open(shared_ptr<AutoCloseHandle> DeviceHandle, ws
     BeginAsyncRead(sError);
 
     // Request device info.
-    RequestDeviceInfo([&](string response) {
-        Log(ssprintf("Received device info.  Master version: %i, P%i", m_DeviceInfo.m_iFirmwareVersion, m_DeviceInfo.m_bP2+1));
+    if (!bIsCabinetDevice) {
+        RequestDeviceInfo([&](string response) {
+            Log(ssprintf("Received device info.  Master version: %i, P%c", m_DeviceInfo.m_iFirmwareVersion, m_DeviceInfo.m_Player));
+            m_bGotInfo = true;
+            });
+    } else {
         m_bGotInfo = true;
-    });
+    }
 
     return true;
 }
@@ -228,6 +232,7 @@ void SMX::SMXDeviceConnection::HandleUsbPacket(const string &buf)
             const data_info_packet *packet = (data_info_packet *) sPacket.data();
             m_DeviceInfo.m_bP2 = packet->player == '1';
             m_DeviceInfo.m_iFirmwareVersion = packet->firmware_version;
+            m_DeviceInfo.m_Player = packet->player;
 
             // The serial is binary in this packet.  Hex format it, which is the same thing
             // we'll get if we read the USB serial number (eg. HidD_GetSerialNumberString).

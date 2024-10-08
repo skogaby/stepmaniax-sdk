@@ -9,7 +9,7 @@ using namespace SMX;
 
 SMX::SMXDeviceSearchThreaded::SMXDeviceSearchThreaded()
 {
-    m_hEvent = make_shared<AutoCloseHandle>(CreateEvent(NULL, false, false, NULL));
+    m_hEvent = make_shared<AutoCloseHandle>(CreateEvent(NULL, false, false, NULL), false);
     m_pDeviceList = make_shared<SMXDeviceSearch>();
 
     // Start the thread.

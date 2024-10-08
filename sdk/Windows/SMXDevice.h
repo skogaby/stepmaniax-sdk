@@ -25,8 +25,8 @@ public:
     // hEvent is signalled when we have new packets to be sent, to wake the communications thread.  The
     // device handle opened with OpenPort must also be monitored, to check when packets have been received
     // (or successfully sent).
-    static shared_ptr<SMXDevice> Create(shared_ptr<SMX::AutoCloseHandle> hEvent, SMX::Mutex &lock);
-    SMXDevice(shared_ptr<SMXDevice> &pSelf, shared_ptr<SMX::AutoCloseHandle> hEvent, SMX::Mutex &lock);
+    static shared_ptr<SMXDevice> Create(shared_ptr<SMX::AutoCloseHandle> hEvent, SMX::Mutex &lock, bool bIsCabinetDevice);
+    SMXDevice(shared_ptr<SMXDevice> &pSelf, shared_ptr<SMX::AutoCloseHandle> hEvent, SMX::Mutex &lock, bool bIsCabinetDevice);
     ~SMXDevice();
 
     bool OpenDeviceHandle(shared_ptr<SMX::AutoCloseHandle> pHandle, wstring &sError);
@@ -99,6 +99,11 @@ private:
     weak_ptr<SMXDevice> m_pSelf;
 
     shared_ptr<SMXDeviceConnection> m_pConnection;
+
+    // This flag says whether this device belongs to a cabinet IO (as opposed to a stage IO). A lot
+    // of the base code is the same between the stage and cabinet IO firmwares, but we need to disable
+    // some functionality for cabinet devices.
+    bool m_bIsCabinetDevice = false;
 
     // The configuration we've read from the device.  m_bHaveConfig is true if we've received
     // a configuration from the device since we've connected to it.

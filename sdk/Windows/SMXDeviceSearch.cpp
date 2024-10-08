@@ -64,7 +64,7 @@ static set<wstring> GetAllHIDDevicePaths(wstring &error)
 
 static shared_ptr<AutoCloseHandle> OpenUSBDevice(LPCTSTR DevicePath, wstring &error)
 {
-    // Log(ssprintf("Opening device: %ls", DevicePath));
+    Log(ssprintf("Opening device: %ls", DevicePath));
     HANDLE OpenDevice = CreateFile(
         DevicePath,
         GENERIC_READ | GENERIC_WRITE,
@@ -79,7 +79,7 @@ static shared_ptr<AutoCloseHandle> OpenUSBDevice(LPCTSTR DevicePath, wstring &er
         return nullptr;
     }
 
-    auto result = make_shared<AutoCloseHandle>(OpenDevice);
+    auto result = make_shared<AutoCloseHandle>(OpenDevice, false);
 
     // Get the HID attributes to check the IDs.
     HIDD_ATTRIBUTES HidAttributes;
@@ -107,10 +107,17 @@ static shared_ptr<AutoCloseHandle> OpenUSBDevice(LPCTSTR DevicePath, wstring &er
         return nullptr;
     }
 
-    if(wstring(ProductName) != L"StepManiaX")
+    wstring productName = wstring(ProductName);
+    if(productName != L"StepManiaX" && productName != L"SMXArcade")
     {
         Log(ssprintf("Device %ls: not our device (%ls)", DevicePath, ProductName));
         return nullptr;
+    }
+
+    // Set the flag on the handle if this is for a cabinet device, so we know which device slot to stick
+    // it into automatically
+    if (productName == L"SMXArcade") {
+        result->m_bIsCabinetDeviceHandle = true;
     }
 
     return result;

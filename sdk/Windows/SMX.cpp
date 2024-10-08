@@ -116,6 +116,38 @@ SMX_API void SMX_SetPlatformLights(const char lightData[88*3], int lightDataSize
     SMXManager::g_pSMX->SetPlatformLights(lights);
 }
 
+SMX_API void SMX_SetDedicatedCabinetLights(SMXDedicatedCabinetLights lightDevice, const char* lightData, int lightDataSize)
+{
+    // Make sure we have the right number of lights for the given device.
+    switch (lightDevice) {
+    case MARQUEE:
+        if (lightDataSize != 24 * 3)
+        {
+            Log("SMX_SetDedicatedCabinetLights: lightDataSize is invalid (must be 24 * 3)\n");
+            return;
+        }
+        break;
+    case LEFT_STRIP:
+    case RIGHT_STRIP:
+        if (lightDataSize != 28 * 3)
+        {
+            Log("SMX_SetDedicatedCabinetLights: lightDataSize is invalid (must be 28 * 3)\n");
+            return;
+        }
+        break;
+    case LEFT_SPOTLIGHTS:
+    case RIGHT_SPOTLIGHTS:
+        if (lightDataSize != 8 * 3)
+        {
+            Log("SMX_SetDedicatedCabinetLights: lightDataSize is invalid (must be 8 * 3)\n");
+            return;
+        }
+        break;
+    }
+
+    SMXManager::g_pSMX->SetDedicatedCabinetLights(lightDevice, lightData, lightDataSize / 3);
+}
+
 SMX_API void SMX_ReenableAutoLights() { SMXManager::g_pSMX->ReenableAutoLights(); }
 SMX_API const char *SMX_Version() { return SMX_BUILD_VERSION; }
 

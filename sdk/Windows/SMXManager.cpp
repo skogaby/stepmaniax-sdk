@@ -6,6 +6,8 @@
 
 #include <windows.h>
 #include <memory>
+#include <stdexcept>
+
 using namespace std;
 using namespace SMX;
 
@@ -21,14 +23,14 @@ SMX::SMXManager::SMXManager(function<void(int PadNumber, SMXUpdateCallbackReason
     // Raise the priority of the user callback thread, since we don't want input
     // events to be preempted by other things and reduce timing accuracy.
     m_UserCallbackThread.SetHighPriority(true);
-    m_hEvent = make_shared<AutoCloseHandle>(CreateEvent(NULL, false, false, NULL));
+    m_hEvent = make_shared<AutoCloseHandle>(CreateEvent(NULL, false, false, NULL), false);
     m_pSMXDeviceSearchThreaded = make_shared<SMXDeviceSearchThreaded>();
 
     // Create the SMXDevices.  We don't create these as we connect, we just reuse the same
     // ones.
-    for(int i = 0; i < 2; ++i)
+    for(int i = 0; i < 3; ++i)
     {
-        shared_ptr<SMXDevice> pDevice = SMXDevice::Create(m_hEvent, g_Lock);
+        shared_ptr<SMXDevice> pDevice = SMXDevice::Create(m_hEvent, g_Lock, i == 2);
         m_pDevices.push_back(pDevice);
     }
 
@@ -41,7 +43,7 @@ SMX::SMXManager::SMXManager(function<void(int PadNumber, SMXUpdateCallbackReason
     };
 
     // Set the update callbacks.  Do this before starting the thread, to avoid race conditions.
-    for(int pad = 0; pad < 2; ++pad)
+    for(int pad = 0; pad < 3; ++pad)
         m_pDevices[pad]->SetUpdateCallback(pCallbackInThread);
 
     // Start the thread.
@@ -526,6 +528,47 @@ void SMX::SMXManager::SetPlatformLights(const string sPanelLights[2])
     SetEvent(m_hEvent->value());
 }
 
+void SMX::SMXManager::SetDedicatedCabinetLights(SMXDedicatedCabinetLights lightDevice, const char* lightData, int numLights)
+{
+    g_Lock.AssertNotLockedByCurrentThread();
+    LockMutex L(g_Lock);
+
+    // We need to correct the byte order of the incoming data before sending it out. We let the clients assume
+    // everything is RGB, but in reality, the byte order is different for the marquee, the spotlights, and the strips.
+    string sLightsData;
+    for (int light = 0; light < numLights; light++) {
+        char r = lightData[(light * 3)];
+        char g = lightData[(light * 3) + 1];
+        char b = lightData[(light * 3) + 2];
+
+        if (lightDevice == MARQUEE) {
+            sLightsData.append(1, b);
+            sLightsData.append(1, r);
+            sLightsData.append(1, g);
+        } else if (lightDevice == LEFT_STRIP || lightDevice == RIGHT_STRIP) {
+            sLightsData.append(1, r);
+            sLightsData.append(1, b);
+            sLightsData.append(1, g);
+        } else if (lightDevice == LEFT_SPOTLIGHTS || lightDevice == RIGHT_SPOTLIGHTS) {
+            sLightsData.append(1, r);
+            sLightsData.append(1, g);
+            sLightsData.append(1, b);
+        }
+    }
+
+    string sLightCommand;
+    sLightCommand.push_back('L');
+    sLightCommand.push_back(lightDevice);
+    sLightCommand.push_back(numLights);
+    sLightCommand += sLightsData.data();
+
+    // The device at index 2 will always be the cabinet device
+    m_pDevices[2]->SendCommandLocked(sLightCommand);
+
+    // Wake up the I/O thread if it's blocking on WaitForMultipleObjectsEx.
+    SetEvent(m_hEvent->value());
+}
+
 void SMX::SMXManager::ReenableAutoLights()
 {
     g_Lock.AssertNotLockedByCurrentThread();
@@ -670,23 +713,25 @@ void SMX::SMXManager::AttemptConnections()
         if(bAlreadyOpen)
             continue;
 
-        // Find an open device slot.
+        // If this is a cabinet IO, then check to see if devices[2] is free. If it's not a cabinet device handle, check
+        // the other 2 device slots
         shared_ptr<SMXDevice> pDeviceToOpen;
-        for(shared_ptr<SMXDevice> pDevice: m_pDevices)
-        {
-            // Note that we check whether the device has a handle rather than calling IsConnected, since
-            // devices aren't actually considered connected until they've read the configuration.
-            if(pDevice->GetDeviceHandle() == NULL)
-            {
-                pDeviceToOpen = pDevice;
-                break;
+
+        if (pHandle->m_bIsCabinetDeviceHandle && m_pDevices[2]->GetDeviceHandle() == NULL) {
+            pDeviceToOpen = m_pDevices[2];
+        } else if (!pHandle->m_bIsCabinetDeviceHandle) {
+            for (int i = 0; i < 2; i++) {
+                if (m_pDevices[i]->GetDeviceHandle() == NULL) {
+                    pDeviceToOpen = m_pDevices[i];
+                    break;
+                }
             }
         }
 
         if(pDeviceToOpen == nullptr)
         {
             // All device slots are used.  Are there more than two devices plugged in?
-            Log("Error: No available slots for device.  Are more than two devices connected?");
+            Log("Error: No available slots for device.  Are more than two stages or one cabinet IO connected?");
             break;
         }
 

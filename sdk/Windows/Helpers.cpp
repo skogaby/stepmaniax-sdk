@@ -268,9 +268,10 @@ const char *SMX::CreateError(string error)
     return buf.c_str();
 }
 
-SMX::AutoCloseHandle::AutoCloseHandle(HANDLE h)
+SMX::AutoCloseHandle::AutoCloseHandle(HANDLE h, bool bIsCabinetDeviceHandle)
 {
     handle = h;
+    m_bIsCabinetDeviceHandle = bIsCabinetDeviceHandle;
 }
 
 SMX::AutoCloseHandle::~AutoCloseHandle()

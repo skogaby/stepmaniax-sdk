@@ -42,15 +42,16 @@ static void ReadDataForPanel(const vector<uint16_t> &data, int iPanel, void *pOu
 }
 
 
-shared_ptr<SMXDevice> SMX::SMXDevice::Create(shared_ptr<AutoCloseHandle> hEvent, Mutex &lock)
+shared_ptr<SMXDevice> SMX::SMXDevice::Create(shared_ptr<AutoCloseHandle> hEvent, Mutex &lock, bool bIsCabinetDevice)
 {
-    return CreateObj<SMXDevice>(hEvent, lock);
+    return CreateObj<SMXDevice>(hEvent, lock, bIsCabinetDevice);
 }
 
-SMX::SMXDevice::SMXDevice(shared_ptr<SMXDevice> &pSelf, shared_ptr<AutoCloseHandle> hEvent, Mutex &lock):
+SMX::SMXDevice::SMXDevice(shared_ptr<SMXDevice>& pSelf, shared_ptr<AutoCloseHandle> hEvent, Mutex& lock, bool bIsCabinetDevice) :
     m_pSelf(GetPointers(pSelf, this)),
     m_hEvent(hEvent),
-    m_Lock(lock)
+    m_Lock(lock),
+    m_bIsCabinetDevice(bIsCabinetDevice)
 {
     m_pConnection = SMXDeviceConnection::Create();
 }
@@ -62,7 +63,7 @@ SMX::SMXDevice::~SMXDevice()
 bool SMX::SMXDevice::OpenDeviceHandle(shared_ptr<AutoCloseHandle> pHandle, wstring &sError)
 {
     m_Lock.AssertLockedByCurrentThread();
-    return m_pConnection->Open(pHandle, sError);
+    return m_pConnection->Open(pHandle, sError, m_bIsCabinetDevice);
 }
 
 void SMX::SMXDevice::CloseDevice()
@@ -101,7 +102,7 @@ bool SMX::SMXDevice::IsConnected() const
 bool SMX::SMXDevice::IsConnectedLocked() const
 {
     m_Lock.AssertLockedByCurrentThread();
-    return m_pConnection->IsConnectedWithDeviceInfo() && m_bHaveConfig;
+    return m_pConnection->IsConnectedWithDeviceInfo() && (m_bHaveConfig || m_bIsCabinetDevice);
 }
 
 void SMX::SMXDevice::SendCommand(string cmd, function<void(string response)> pComplete)
@@ -140,6 +141,9 @@ void SMX::SMXDevice::GetInfoLocked(SMXInfo &info)
 {
     m_Lock.AssertLockedByCurrentThread();
 
+    if (m_bIsCabinetDevice)
+        return;
+
     info = SMXInfo();
     info.m_bConnected = IsConnectedLocked();
     if(!info.m_bConnected)
@@ -156,7 +160,8 @@ void SMX::SMXDevice::GetInfoLocked(SMXInfo &info)
 bool SMX::SMXDevice::IsPlayer2Locked() const
 {
     m_Lock.AssertLockedByCurrentThread();
-    if(!IsConnectedLocked())
+
+   if (m_bIsCabinetDevice || !IsConnectedLocked())
         return false;
 
     return m_pConnection->GetDeviceInfo().m_bP2;
@@ -172,6 +177,9 @@ bool SMX::SMXDevice::GetConfigLocked(SMXConfig &configOut)
 {
     m_Lock.AssertLockedByCurrentThread();
 
+    if (m_bIsCabinetDevice)
+        return true;
+
     // If SetConfig was called to write a new configuration but we haven't sent it
     // yet, return it instead of the configuration we read alst, so GetConfig
     // immediately after SetConfig returns the value the caller expects set.
@@ -186,6 +194,10 @@ bool SMX::SMXDevice::GetConfigLocked(SMXConfig &configOut)
 void SMX::SMXDevice::SetConfig(const SMXConfig &newConfig)
 {
     LockMutex Lock(m_Lock);
+
+    if (m_bIsCabinetDevice)
+        return;
+
     wanted_config = newConfig;
     m_bSendConfig = true;
 }
@@ -193,6 +205,10 @@ void SMX::SMXDevice::SetConfig(const SMXConfig &newConfig)
 uint16_t SMX::SMXDevice::GetInputState() const
 {
     LockMutex Lock(m_Lock);
+
+    if (m_bIsCabinetDevice)
+        return 0;
+
     return m_pConnection->GetInputState();
 }
 
@@ -200,6 +216,10 @@ void SMX::SMXDevice::FactoryReset()
 {
     // Send a factory reset command, and then read the new configuration.
     LockMutex Lock(m_Lock);
+
+    if (m_bIsCabinetDevice)
+        return;
+
     SendCommandLocked("f\n");
 
     SMXDeviceInfo deviceInfo = m_pConnection->GetDeviceInfo();
@@ -236,12 +256,20 @@ void SMX::SMXDevice::FactoryReset()
 void SMX::SMXDevice::ForceRecalibration()
 {
     LockMutex Lock(m_Lock);
+
+    if (m_bIsCabinetDevice)
+        return;
+
     SendCommandLocked("C\n");
 }
 
 void SMX::SMXDevice::SetSensorTestMode(SensorTestMode mode)
 {
     LockMutex Lock(m_Lock);
+
+    if (m_bIsCabinetDevice)
+        return;
+
     m_SensorTestMode = mode;
 }
 
@@ -250,7 +278,7 @@ bool SMX::SMXDevice::GetTestData(SMXSensorTestModeData &data)
     LockMutex Lock(m_Lock);
 
     // Stop if we haven't read test mode data yet.
-    if(!m_HaveSensorTestModeData)
+    if(m_bIsCabinetDevice || !m_HaveSensorTestModeData)
         return false;
 
     data = m_SensorTestData;
@@ -261,11 +289,18 @@ void SMX::SMXDevice::CallUpdateCallback(SMXUpdateCallbackReason reason)
 {
     m_Lock.AssertLockedByCurrentThread();
 
-    if(!m_pUpdateCallback)
+    if (!m_pUpdateCallback)
         return;
 
     SMXDeviceInfo deviceInfo = m_pConnection->GetDeviceInfo();
-    m_pUpdateCallback(deviceInfo.m_bP2? 1:0, reason);
+
+    int player = 0;
+    if (m_bIsCabinetDevice)
+        player = 2;
+    else if (deviceInfo.m_bP2)
+        player = 1;
+
+    m_pUpdateCallback(player, reason);
 }
 
 void SMX::SMXDevice::HandlePackets()
@@ -342,7 +377,7 @@ void SMX::SMXDevice::SendConfig()
 {
     m_Lock.AssertLockedByCurrentThread();
 
-    if(!m_pConnection->IsConnected() || !m_bSendConfig || m_bSendingConfig)
+    if(!m_pConnection->IsConnected() || !m_bSendConfig || m_bSendingConfig || m_bIsCabinetDevice)
         return;
 
     // We can't update the configuration until we've received the device's previous
@@ -425,8 +460,11 @@ void SMX::SMXDevice::Update(wstring &sError)
         return;
 
     CheckActive();
-    SendConfig();
-    UpdateSensorTestMode();
+
+    if (!m_bIsCabinetDevice) {
+        SendConfig();
+        UpdateSensorTestMode();
+    }
 
     {
         uint16_t iOldState = m_pConnection->GetInputState();
@@ -437,7 +475,7 @@ void SMX::SMXDevice::Update(wstring &sError)
             return;
 
         // If the inputs changed from packets we just processed, call the update callback.
-        if(iOldState != m_pConnection->GetInputState())
+        if(!m_bIsCabinetDevice && iOldState != m_pConnection->GetInputState())
             CallUpdateCallback(SMXUpdateCallback_Updated);
     }
 
@@ -458,7 +496,8 @@ void SMX::SMXDevice::CheckActive()
 
     // Read the current configuration.  The device will return a "g" or "G" response
     // containing its current SMXConfig.
-    SendCommandLocked(deviceInfo.m_iFirmwareVersion >= 5? "G":"g\n");
+    if (!m_bIsCabinetDevice)
+        SendCommandLocked(deviceInfo.m_iFirmwareVersion >= 5? "G":"g\n");
 }
 
 // Check if we need to request test mode data.
@@ -466,7 +505,7 @@ void SMX::SMXDevice::UpdateSensorTestMode()
 {
     m_Lock.AssertLockedByCurrentThread();
 
-    if(m_SensorTestMode == SensorTestMode_Off)
+    if(m_bIsCabinetDevice || m_SensorTestMode == SensorTestMode_Off)
         return;
 
     // Request sensor data from the master.  Don't send this if we have a request outstanding
@@ -492,6 +531,9 @@ void SMX::SMXDevice::UpdateSensorTestMode()
 void SMX::SMXDevice::HandleSensorTestDataResponse(const string &sReadBuffer)
 {
     m_Lock.AssertLockedByCurrentThread();
+
+    if (m_bIsCabinetDevice)
+        return;
 
     // "y" is a response to our "y" query.  This is binary data, with the format:
     // yAB......

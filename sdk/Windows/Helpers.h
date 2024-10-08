@@ -75,9 +75,10 @@ shared_ptr<T> CreateObj(Args&&... args)
 class AutoCloseHandle
 {
 public:
-    AutoCloseHandle(HANDLE h);
+    AutoCloseHandle(HANDLE h, bool bIsCabinetDeviceHandle);
     ~AutoCloseHandle();
     HANDLE value() const { return handle; }
+    bool m_bIsCabinetDeviceHandle;
 
 private:
     AutoCloseHandle(const AutoCloseHandle &rhs);
@@ -119,7 +120,7 @@ public:
     Event(Mutex &lock):
         m_Lock(lock)
     {
-        m_hEvent = make_shared<AutoCloseHandle>(CreateEvent(NULL, false, false, NULL));
+        m_hEvent = make_shared<AutoCloseHandle>(CreateEvent(NULL, false, false, NULL), false);
     }
 
     void Set()
