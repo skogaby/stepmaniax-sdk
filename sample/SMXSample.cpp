@@ -63,8 +63,8 @@ public:
             }
 
             // Construct some lights data for each device
-            RGB color = colors[step % 3];
             for (int c = 0; c < numLights; c++) {
+                RGB color = colors[(step + c) % 3];
                 addColor(&sLightsData, color.r, color.g, color.b);
             }
 
@@ -128,28 +128,29 @@ public:
 int main()
 {
     InputSample demo;
+    Sleep(2000);
     RGB colors[3];
 
     colors[0].r = 0xff;
-    colors[0].g = 0x01;
-    colors[0].b = 0x01;
+    colors[0].g = 0x00;
+    colors[0].b = 0x00;
 
-    colors[1].r = 0x01;
+    colors[1].r = 0x00;
     colors[1].g = 0xff;
-    colors[1].b = 0x01;
+    colors[1].b = 0x00;
 
-    colors[2].r = 0x01;
-    colors[2].g = 0x01;
+    colors[2].r = 0x00;
+    colors[2].g = 0x00;
     colors[2].b = 0xff;
 
     // Loop forever for this sample.
     int step = 0;
     while(1)
     {
-        Sleep(500);
         demo.SetStageLights();
         demo.SetCabinetLights(step, colors);
         step++;
+        Sleep(100);
     }
 
     return 0;

@@ -533,13 +533,17 @@ void SMX::SMXManager::SetDedicatedCabinetLights(SMXDedicatedCabinetLights lightD
     g_Lock.AssertNotLockedByCurrentThread();
     LockMutex L(g_Lock);
 
+    auto scaleLight = [](uint8_t iColor) {
+        return uint8_t(iColor == 0 ? 1 : iColor * 0.6666f);
+    };
+
     // We need to correct the byte order of the incoming data before sending it out. We let the clients assume
     // everything is RGB, but in reality, the byte order is different for the marquee, the spotlights, and the strips.
     string sLightsData;
     for (int light = 0; light < numLights; light++) {
-        char r = lightData[(light * 3)];
-        char g = lightData[(light * 3) + 1];
-        char b = lightData[(light * 3) + 2];
+        char r = scaleLight(lightData[(light * 3)]);
+        char g = scaleLight(lightData[(light * 3) + 1]);
+        char b = scaleLight(lightData[(light * 3) + 2]);
 
         if (lightDevice == MARQUEE) {
             sLightsData.append(1, b);
@@ -561,6 +565,7 @@ void SMX::SMXManager::SetDedicatedCabinetLights(SMXDedicatedCabinetLights lightD
     sLightCommand.push_back(lightDevice);
     sLightCommand.push_back(numLights);
     sLightCommand += sLightsData.data();
+    sLightCommand.push_back('\n');
 
     // The device at index 2 will always be the cabinet device
     m_pDevices[2]->SendCommandLocked(sLightCommand);
