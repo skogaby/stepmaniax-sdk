@@ -121,9 +121,9 @@ SMX_API void SMX_SetDedicatedCabinetLights(SMXDedicatedCabinetLights lightDevice
     // Make sure we have the right number of lights for the given device.
     switch (lightDevice) {
     case MARQUEE:
-        if (lightDataSize != 24 * 3)
+        if (lightDataSize != 12 * 3)
         {
-            Log("SMX_SetDedicatedCabinetLights: lightDataSize is invalid (must be 24 * 3)\n");
+            Log("SMX_SetDedicatedCabinetLights: lightDataSize is invalid (must be 12 * 3)\n");
             return;
         }
         break;
