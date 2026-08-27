@@ -533,42 +533,91 @@ void SMX::SMXManager::SetDedicatedCabinetLights(SMXDedicatedCabinetLights lightD
     g_Lock.AssertNotLockedByCurrentThread();
     LockMutex L(g_Lock);
 
-    auto scaleLight = [](uint8_t iColor) {
-        return uint8_t(iColor == 0 ? 1 : iColor * 0.6666f);
-    };
+    // The cabinet lights command is:
+    //
+    //     <command char> <light device index> <triplet count> <triplet count * 3 color bytes>
+    //
+    // with no trailing newline.  We always send a fixed triplet count per device (32 for
+    // the marquee and strips, 8 for the spotlights), zero-filling any triplets past the
+    // physical LEDs.  Zero color bytes are valid on the wire: black is sent as 0x00 and
+    // the padding is always 0x00.  Color values are full range (0-255).
+    //
+    // The protocol depends on the lights controller model, which we read from the "I"
+    // handshake when the device connects (see SMXDevice::HandleCabinetInfoResponse):
+    //
+    // * Models 0-2 use the 'L' command for every light device.  The marquee carries 24
+    //   color triplets and the strips 28, matching this API's documented sizes.
+    // * Model 3 uses 'Q' for the marquee (20 triplets) and strips (23 triplets, in
+    //   reverse physical order), and 'L' for the spotlights (6 triplets).  On model 3
+    //   hardware we send the caller's first 20/23/6 colors, reversing the strips.
+    //
+    // The client API is always RGB; each device wants its own channel order on the wire.
+    static const int iOrderRGB[3] = { 0, 1, 2 };
+    static const int iOrderBRG[3] = { 2, 0, 1 };
+    static const int iOrderRBG[3] = { 0, 2, 1 };
 
-    // We need to correct the byte order of the incoming data before sending it out. We let the clients assume
-    // everything is RGB, but in reality, the byte order is different for the marquee, the spotlights, and the strips.
-    string sLightsData;
-    for (int light = 0; light < numLights; light++) {
-        char r = scaleLight(lightData[(light * 3)]);
-        char g = scaleLight(lightData[(light * 3) + 1]);
-        char b = scaleLight(lightData[(light * 3) + 2]);
+    // The device at index 2 will always be the cabinet device.
+    shared_ptr<SMXDevice> pCabinetDevice = m_pDevices[2];
+    int iModel = pCabinetDevice->GetCabinetLightsModelLocked();
+    bool bModel3 = iModel == 3;
 
-        if (lightDevice == MARQUEE) {
-            sLightsData.append(1, b);
-            sLightsData.append(1, r);
-            sLightsData.append(1, g);
-        } else if (lightDevice == LEFT_STRIP || lightDevice == RIGHT_STRIP) {
-            sLightsData.append(1, r);
-            sLightsData.append(1, b);
-            sLightsData.append(1, g);
-        } else if (lightDevice == LEFT_SPOTLIGHTS || lightDevice == RIGHT_SPOTLIGHTS) {
-            sLightsData.append(1, r);
-            sLightsData.append(1, g);
-            sLightsData.append(1, b);
-        }
+    char cCommand = 'L';
+    int iWireLights = numLights;    // color triplets taken from lightData
+    int iPaddedLights = numLights;  // total triplets sent, zero-padded past iWireLights
+    bool bReverse = false;
+    const int *pChannelOrder = iOrderRGB;
+
+    switch(lightDevice)
+    {
+    case MARQUEE:
+        cCommand = bModel3? 'Q':'L';
+        iWireLights = bModel3? 20:24;
+        iPaddedLights = 32;
+        pChannelOrder = iOrderBRG;
+        break;
+
+    case LEFT_STRIP:
+    case RIGHT_STRIP:
+        cCommand = bModel3? 'Q':'L';
+        iWireLights = bModel3? 23:28;
+        iPaddedLights = 32;
+
+        // Model 1 strips want B,R,G; every other model wants R,B,G.
+        pChannelOrder = (iModel == 1)? iOrderBRG:iOrderRBG;
+
+        // Model 3 strips run in the opposite physical direction.
+        bReverse = bModel3;
+        break;
+
+    case LEFT_SPOTLIGHTS:
+    case RIGHT_SPOTLIGHTS:
+        cCommand = 'L';
+        iWireLights = bModel3? 6:8;
+        iPaddedLights = 8;
+        pChannelOrder = iOrderRGB;
+        break;
     }
 
-    string sLightCommand;
-    sLightCommand.push_back('L');
-    sLightCommand.push_back(lightDevice);
-    sLightCommand.push_back(numLights);
-    sLightCommand += sLightsData.data();
-    sLightCommand.push_back('\n');
+    // Never read past the data the caller gave us.
+    iWireLights = min(iWireLights, numLights);
 
-    // The device at index 2 will always be the cabinet device
-    m_pDevices[2]->SendCommandLocked(sLightCommand);
+    string sLightCommand;
+    sLightCommand.push_back(cCommand);
+    sLightCommand.push_back((char) lightDevice);
+    sLightCommand.push_back((char) iPaddedLights);
+
+    for(int iLight = 0; iLight < iWireLights; ++iLight)
+    {
+        int iSource = bReverse? (iWireLights - 1 - iLight):iLight;
+        const char *pRGB = &lightData[iSource * 3];
+        for(int iChannel = 0; iChannel < 3; ++iChannel)
+            sLightCommand.push_back(pRGB[pChannelOrder[iChannel]]);
+    }
+
+    // Zero-fill the remainder of the fixed-size payload.
+    sLightCommand.append((iPaddedLights - iWireLights) * 3, '\0');
+
+    pCabinetDevice->SendCommandLocked(sLightCommand);
 
     // Wake up the I/O thread if it's blocking on WaitForMultipleObjectsEx.
     SetEvent(m_hEvent->value());

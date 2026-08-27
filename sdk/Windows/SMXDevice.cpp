@@ -75,6 +75,8 @@ void SMX::SMXDevice::CloseDevice()
     m_bSendConfig = false;
     m_bSendingConfig = false;
     m_bWaitingForConfigResponse = false;
+    m_iCabinetLightsVersion = 0;
+    m_iCabinetLightsModel = 0;
 
     CallUpdateCallback(SMXUpdateCallback_Updated);
 }
@@ -165,6 +167,12 @@ bool SMX::SMXDevice::IsPlayer2Locked() const
         return false;
 
     return m_pConnection->GetDeviceInfo().m_bP2;
+}
+
+int SMX::SMXDevice::GetCabinetLightsModelLocked() const
+{
+    m_Lock.AssertLockedByCurrentThread();
+    return m_iCabinetLightsModel;
 }
 
 bool SMX::SMXDevice::GetConfig(SMXConfig &configOut)
@@ -321,6 +329,14 @@ void SMX::SMXDevice::HandlePackets()
             HandleSensorTestDataResponse(buf);
             break;
 
+        // 'I' is the cabinet lights controller's response to our "I\n" handshake.  Stage
+        // controllers report device info through the PACKET_FLAG_DEVICE_INFO path instead,
+        // so only handle this for cabinet devices.
+        case 'I':
+            if(m_bIsCabinetDevice)
+                HandleCabinetInfoResponse(buf);
+            break;
+
         // 'g' is sent by firmware versions 1-4.  Version 5 and newer send 'G', to ensure
         // older code doesn't misinterpret the modified config packet format.
         case 'g':
@@ -367,6 +383,26 @@ void SMX::SMXDevice::HandlePackets()
         }
         }
     }
+}
+
+// Handle the cabinet lights controller's response to our "I\n" handshake.  The response
+// is 'I', a little-endian uint16 version, and a uint8 model byte.  The model byte is only
+// present when the version is 2 or newer; older controllers are model 0.
+void SMX::SMXDevice::HandleCabinetInfoResponse(const string &sReadBuffer)
+{
+    m_Lock.AssertLockedByCurrentThread();
+
+    // Pad the response out so short packets parse as zeroes.
+    string sPacket = sReadBuffer;
+    sPacket.resize(4, 0);
+
+    m_iCabinetLightsVersion =
+        (uint16_t(uint8_t(sPacket[2])) << 8) |
+        (uint16_t(uint8_t(sPacket[1])) << 0);
+    m_iCabinetLightsModel = m_iCabinetLightsVersion >= 2? uint8_t(sPacket[3]):0;
+
+    Log(ssprintf("Cabinet lights controller: version %i, model %i",
+        m_iCabinetLightsVersion, m_iCabinetLightsModel));
 }
 
 // If m_bSendConfig is true, send the configuration to the pad.  Note that while the game
@@ -494,10 +530,19 @@ void SMX::SMXDevice::CheckActive()
 
     SMXDeviceInfo deviceInfo = m_pConnection->GetDeviceInfo();
 
-    // Read the current configuration.  The device will return a "g" or "G" response
-    // containing its current SMXConfig.
     if (!m_bIsCabinetDevice)
+    {
+        // Read the current configuration.  The device will return a "g" or "G" response
+        // containing its current SMXConfig.
         SendCommandLocked(deviceInfo.m_iFirmwareVersion >= 5? "G":"g\n");
+    }
+    else
+    {
+        // Request the cabinet lights controller's version and model.  The device will
+        // return an "I" response, parsed in HandleCabinetInfoResponse.  The model selects
+        // the lights wire protocol.
+        SendCommandLocked("I\n");
+    }
 }
 
 // Check if we need to request test mode data.

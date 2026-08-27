@@ -131,6 +131,13 @@ SMX_API void SMX_SetPanelTestMode(PanelTestMode mode);
 // * LEFT_SPOTLIGHTS = 8
 // * RIGHT_STRIP = 28
 // * RIGHT_SPOTLIGHTS = 8
+// Data is RGB, one byte per channel, full range (0-255).  The channel reordering the hardware
+// expects is handled internally.
+//
+// The sizes above match model 0-2 lights controllers.  Newer model 3 controllers drive fewer
+// LEDs (marquee 20, strips 23, spotlights 6); on model 3 hardware the SDK sends the first
+// 20/23/6 colors from the given data and ignores the rest.  The model is detected automatically
+// when the cabinet lights controller connects.
 SMX_API void SMX_SetDedicatedCabinetLights(SMXDedicatedCabinetLights lightDevice, const char* lightData, int lightDataSize);
 
 // Return the build version of the DLL, which is based on the git tag at build time.  This

@@ -51,6 +51,12 @@ public:
     // Return true if this device is configured as player 2.
     bool IsPlayer2Locked() const; // used by SMXManager
 
+    // Return the cabinet lights controller model, read from the "I" handshake after
+    // connecting.  This is only meaningful for cabinet devices, and selects the lights
+    // wire protocol (see SMXManager::SetDedicatedCabinetLights).  Returns 0 until the
+    // handshake response has been received, which matches the oldest protocol.
+    int GetCabinetLightsModelLocked() const; // used by SMXManager
+
     // Get the configuration of the connected device (or the most recently read configuration if
     // we're not connected).
     bool GetConfig(SMXConfig &configOut);
@@ -122,6 +128,13 @@ private:
 
     void CallUpdateCallback(SMXUpdateCallbackReason reason);
     void HandlePackets();
+
+    // Cabinet lights controller info, parsed from the response to the "I" command we
+    // send when a cabinet device activates.  The response is 'I', a little-endian
+    // uint16 version, and a uint8 model byte (only present when version >= 2).
+    void HandleCabinetInfoResponse(const string &sReadBuffer);
+    uint16_t m_iCabinetLightsVersion = 0;
+    uint8_t m_iCabinetLightsModel = 0;
 
     void SendConfig();
     void CheckActive();
